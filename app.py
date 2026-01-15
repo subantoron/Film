@@ -371,19 +371,70 @@ def load_data_from_upload(file_bytes: bytes) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.copy()
+    
+    # First, let's check what columns we have
+    st.info(f"Kolom dataset: {list(df.columns)}")
+    
+    # Clean column names (strip whitespace, lowercase)
+    df.columns = df.columns.str.strip().str.lower()
+    
+    # Handle different column name variations
+    column_mapping = {
+        'show id': 'show_id',
+        'show_id': 'show_id',
+        'type': 'type',
+        'title': 'title',
+        'director': 'director',
+        'cast': 'cast',
+        'country': 'country',
+        'date_added': 'date_added',
+        'release year': 'release_year',
+        'rating': 'rating',
+        'duration': 'duration',
+        'listed in': 'listed_in',
+        'description': 'description'
+    }
+    
+    # Rename columns based on mapping
+    for old_name, new_name in column_mapping.items():
+        if old_name in df.columns:
+            df[new_name] = df[old_name]
+    
+    # Ensure all expected columns exist
     expected = [
         "show_id", "type", "title", "director", "cast", "country", 
-        "date_added_iso", "release_year", "rating", "duration", 
-        "listed_in", "description"
+        "release_year", "rating", "duration", "listed_in", "description"
     ]
+    
     for col in expected:
         if col not in df.columns:
             df[col] = ""
+            st.warning(f"Kolom '{col}' tidak ditemukan, dibuat kosong")
+    
+    # Debug: Show unique types
+    st.info(f"Tipe unik dalam dataset: {df['type'].unique()}")
+    
+    # Clean type column - handle different formats
+    df['type'] = df['type'].astype(str).str.strip()
+    
+    # Standardize type values
+    type_mapping = {
+        'Movie': 'Movie',
+        'movie': 'Movie',
+        'TV Show': 'TV Show',
+        'TV show': 'TV Show',
+        'Tv Show': 'TV Show',
+        'tv show': 'TV Show',
+        'Series': 'TV Show',
+        'series': 'TV Show'
+    }
+    
+    df['type'] = df['type'].map(type_mapping).fillna(df['type'])
     
     text_cols = ["type", "title", "director", "cast", "country", "rating", "duration", "listed_in", "description"]
     for c in text_cols:
         df[c] = df[c].fillna("").astype(str)
-        df[c] = df[c].replace({"Unknown": ""})
+        df[c] = df[c].replace({"unknown": "", "Unknown": "", "nan": "", "NaN": "", "None": "", "none": ""})
     
     if "release_year" in df.columns:
         df["release_year"] = pd.to_numeric(df["release_year"], errors="coerce").fillna(0).astype(int)
@@ -411,6 +462,11 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     
     if df["show_id"].astype(str).duplicated().any():
         df["show_id"] = df.apply(lambda r: f"{r.get('show_id','')}_{r.name}", axis=1)
+    
+    # Debug: Count types
+    movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
+    tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
+    st.info(f"Total Movies: {movie_count}, Total TV Shows: {tv_count}")
     
     return df
 
@@ -487,7 +543,7 @@ def recommend_by_query(
     return recs.head(top_n)
 
 def split_and_count(series: pd.Series, sep: str = ",", top_k: int = 10) -> pd.Series:
-    s = series.fillna("").astype(str).replace({"Unknown": ""})
+    s = series.fillna("").astype(str).replace({"unknown": "", "Unknown": ""})
     exploded = s.str.split(sep).explode().astype(str).str.strip()
     exploded = exploded[exploded != ""]
     return exploded.value_counts().head(top_k)
@@ -495,12 +551,20 @@ def split_and_count(series: pd.Series, sep: str = ",", top_k: int = 10) -> pd.Se
 def display_recommendation_card(r: pd.Series, rank: int):
     """Display a beautiful recommendation card using Streamlit components"""
     similarity = float(r.get("similarity", 0.0))
+    title = _safe_str(r.get('title', ''))
+    content_type = _safe_str(r.get('type', ''))
+    year = r.get('release_year', '')
+    rating = _safe_str(r.get('rating', ''))
+    genre = _safe_str(r.get('listed_in', ''))
+    description = _safe_str(r.get('description', 'No description available'))
+    director = _safe_str(r.get('director', 'Not specified'))
+    country = _safe_str(r.get('country', 'Not specified'))
     
     # Use markdown for the card container
     st.markdown(f"""
     <div class="recommendation-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {_safe_str(r.get('title', ''))}</h4>
+            <h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {title}</h4>
             <div class="similarity-score">
                 {similarity:.1%}
             </div>
@@ -508,51 +572,54 @@ def display_recommendation_card(r: pd.Series, rank: int):
     </div>
     """, unsafe_allow_html=True)
     
-    # Use Streamlit components for the content (this ensures proper rendering)
+    # Use Streamlit components for the content
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f'<span class="badge badge-movie">{_safe_str(r.get("type", ""))}</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="badge badge-movie">{content_type}</span>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f'<span class="badge badge-year">{r.get("release_year", "")}</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="badge badge-year">{year}</span>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f'<span class="badge badge-rating">{_safe_str(r.get("rating", ""))}</span>', unsafe_allow_html=True)
+        st.markdown(f'<span class="badge badge-rating">{rating}</span>', unsafe_allow_html=True)
     
     # Genre
-    st.markdown(f"""
-    <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
-        <strong style="color: #667eea;">🎭 Genre:</strong> 
-        <span style="color: #555; font-weight: 500;">{_safe_str(r.get('listed_in', ''))}</span>
-    </div>
-    """, unsafe_allow_html=True)
+    if genre:
+        st.markdown(f"""
+        <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
+            <strong style="color: #667eea;">🎭 Genre:</strong> 
+            <span style="color: #555; font-weight: 500;">{genre}</span>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Description
-    description = _safe_str(r.get('description', 'No description available'))
-    st.markdown(f"""
-    <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
-        <strong style="color: #667eea;">📖 Deskripsi:</strong>
-        <div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">
-            {description}
+    if description and description != "No description available":
+        st.markdown(f"""
+        <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+            <strong style="color: #667eea;">📖 Deskripsi:</strong>
+            <div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">
+                {description}
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
     # Additional details
     col_details1, col_details2 = st.columns(2)
     with col_details1:
-        st.markdown(f"""
-        <div style="margin-bottom: 0.5rem;">
-            <strong style="color: #667eea;">🎬 Director:</strong>
-            <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('director', 'Not specified'))}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        if director and director != "Not specified":
+            st.markdown(f"""
+            <div style="margin-bottom: 0.5rem;">
+                <strong style="color: #667eea;">🎬 Director:</strong>
+                <div style="color: #666; font-size: 0.95rem;">{director}</div>
+            </div>
+            """, unsafe_allow_html=True)
     
     with col_details2:
-        st.markdown(f"""
-        <div style="margin-bottom: 0.5rem;">
-            <strong style="color: #667eea;">🌍 Negara:</strong>
-            <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('country', 'Not specified'))}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        if country and country != "Not specified":
+            st.markdown(f"""
+            <div style="margin-bottom: 0.5rem;">
+                <strong style="color: #667eea;">🌍 Negara:</strong>
+                <div style="color: #666; font-size: 0.95rem;">{country}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 def display_metric_card(title: str, value: str, subtitle: str = "", icon: str = "📊"):
     """Display a metric card"""
@@ -676,10 +743,36 @@ with st.spinner("🔧 Memproses dan menyiapkan data untuk analisis..."):
 with st.sidebar:
     st.success("✅ **Sistem Aktif** - Dataset berhasil dimuat", icon="✅")
 
+# Debug: Check type distribution
+st.sidebar.markdown("### 📊 Distribusi Data")
+st.sidebar.write(f"Total Data: **{len(df):,}**")
+
+# Get actual counts with case-insensitive matching
+movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
+tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
+
+st.sidebar.write(f"Movies: **{movie_count:,}**")
+st.sidebar.write(f"TV Shows: **{tv_count:,}**")
+
 # Common variables
 min_year = int(df["release_year"].replace(0, np.nan).min(skipna=True) or 1900)
 max_year = int(df["release_year"].max() or 2025)
-type_options = ["Semua Tipe"] + sorted(df["type"].dropna().unique().tolist())
+
+# Get unique types properly
+unique_types = df['type'].astype(str).unique()
+# Filter out empty strings and normalize
+unique_types = [t for t in unique_types if t and t != 'nan']
+# Standardize types
+standard_types = []
+for t in unique_types:
+    if 'movie' in str(t).lower():
+        standard_types.append('Movie')
+    elif 'tv' in str(t).lower():
+        standard_types.append('TV Show')
+    else:
+        standard_types.append(t)
+
+type_options = ["Semua Tipe"] + sorted(list(set(standard_types)))
 
 # -----------------------------
 # Page: Recommendation
@@ -704,17 +797,25 @@ if page == "🎯 Rekomendasi":
             
             if filter_type_for_selector == "Semua Tipe":
                 selector_df = df
+            elif filter_type_for_selector == "Movie":
+                selector_df = df[df['type'].str.contains('Movie', case=False, na=False)]
+            elif filter_type_for_selector == "TV Show":
+                selector_df = df[df['type'].str.contains('TV', case=False, na=False)]
             else:
                 selector_df = df[df["type"] == filter_type_for_selector]
             
             # Title selection
-            options = selector_df["display_title"].tolist()
-            selected_display = st.selectbox(
-                "**Pilih judul yang ingin direkomendasikan:**",
-                options=options,
-                index=0,
-                help="Pilih satu judul film atau serial TV untuk mendapatkan rekomendasi serupa"
-            )
+            if len(selector_df) > 0:
+                options = selector_df["display_title"].tolist()
+                selected_display = st.selectbox(
+                    "**Pilih judul yang ingin direkomendasikan:**",
+                    options=options,
+                    index=0,
+                    help="Pilih satu judul film atau serial TV untuk mendapatkan rekomendasi serupa"
+                )
+            else:
+                st.warning(f"Tidak ada konten dengan tipe: {filter_type_for_selector}")
+                selected_display = None
             
             # Recommendation settings
             st.markdown("### ⚙️ Pengaturan Rekomendasi")
@@ -748,7 +849,7 @@ if page == "🎯 Rekomendasi":
             year_min, year_max = year_range
             
             # Recommendation button
-            if st.button("🚀 Dapatkan Rekomendasi", type="primary", use_container_width=True):
+            if selected_display and st.button("🚀 Dapatkan Rekomendasi", type="primary", use_container_width=True):
                 idx = int(df.index[df["display_title"] == selected_display][0])
                 
                 # Display selected content
@@ -762,21 +863,21 @@ if page == "🎯 Rekomendasi":
                     st.markdown(f"#### {selected_item['title']}")
                     st.markdown(f"**🎭 {selected_item['type']} • 📅 {selected_item['release_year']} • ⭐ {selected_item['rating']}**")
                     
-                    if selected_item['listed_in']:
+                    if selected_item['listed_in'] and selected_item['listed_in'] != "":
                         st.markdown(f"**Genre:** {selected_item['listed_in']}")
-                    if selected_item['country']:
+                    if selected_item['country'] and selected_item['country'] != "":
                         st.markdown(f"**Negara:** {selected_item['country']}")
                     
-                    if selected_item['description']:
+                    if selected_item['description'] and selected_item['description'] != "":
                         with st.expander("📖 Baca Sinopsis Lengkap"):
                             st.write(selected_item['description'])
                 
                 with col_info2:
-                    if selected_item['director']:
+                    if selected_item['director'] and selected_item['director'] != "":
                         st.markdown(f"**🎬 Sutradara:** {selected_item['director']}")
-                    if selected_item['cast']:
+                    if selected_item['cast'] and selected_item['cast'] != "":
                         st.markdown(f"**👥 Pemain:** {selected_item['cast'][:100]}...")
-                    if selected_item['duration']:
+                    if selected_item['duration'] and selected_item['duration'] != "":
                         st.markdown(f"**⏱️ Durasi:** {selected_item['duration']}")
                 
                 # Get recommendations
@@ -816,8 +917,8 @@ if page == "🎯 Rekomendasi":
                                 if r.get('show_id'):
                                     st.write(f"**ID:** {r['show_id']}")
                             with col_d2:
-                                if r.get('date_added_iso'):
-                                    st.write(f"**Ditambahkan:** {r['date_added_iso']}")
+                                if 'date_added' in r and r['date_added']:
+                                    st.write(f"**Ditambahkan:** {r['date_added']}")
         
         with col2:
             st.markdown("### 📊 Statistik Dataset")
@@ -831,14 +932,14 @@ if page == "🎯 Rekomendasi":
             
             display_metric_card(
                 "Movies",
-                f"{int((df['type']=='Movie').sum()):,}",
+                f"{movie_count:,}",
                 "Film layar lebar",
                 "🎥"
             )
             
             display_metric_card(
                 "TV Shows",
-                f"{int((df['type']=='TV Show').sum()):,}",
+                f"{tv_count:,}",
                 "Serial televisi",
                 "📺"
             )
@@ -852,18 +953,33 @@ if page == "🎯 Rekomendasi":
             
             # Recently added preview
             st.divider()
-            st.markdown("### 🆕 Baru Ditambahkan")
-            if "date_added_iso" in df.columns:
+            st.markdown("### 🆕 Konten Terbaru")
+            # Try different date columns
+            date_columns = ['date_added', 'date_added_iso', 'release_year']
+            date_col = None
+            for col in date_columns:
+                if col in df.columns:
+                    date_col = col
+                    break
+            
+            if date_col:
                 recent = df.copy()
-                recent["date_added_iso"] = pd.to_datetime(recent["date_added_iso"], errors="coerce")
-                recent = recent.sort_values("date_added_iso", ascending=False).head(5)
+                if date_col == 'release_year':
+                    recent = recent.sort_values(date_col, ascending=False).head(5)
+                else:
+                    recent[date_col] = pd.to_datetime(recent[date_col], errors='coerce')
+                    recent = recent.sort_values(date_col, ascending=False).head(5)
                 
                 for idx, item in recent.iterrows():
                     with st.expander(f"{item['title']} ({item['release_year']})", expanded=False):
                         st.write(f"**Tipe:** {item['type']}")
-                        st.write(f"**Genre:** {item['listed_in']}")
-                        if pd.notna(item['date_added_iso']):
-                            st.write(f"**Ditambahkan:** {item['date_added_iso'].strftime('%Y-%m-%d')}")
+                        if item['listed_in']:
+                            st.write(f"**Genre:** {item['listed_in']}")
+                        if date_col != 'release_year' and pd.notna(item[date_col]):
+                            try:
+                                st.write(f"**Ditambahkan:** {item[date_col].strftime('%Y-%m-%d')}")
+                            except:
+                                st.write(f"**Ditambahkan:** {item[date_col]}")
     
     # Tab 2: By Keywords
     with tabs[1]:
@@ -960,13 +1076,16 @@ if page == "🎯 Rekomendasi":
         
         # Preview of popular content
         st.markdown("### 🏆 Konten Populer")
-        popular = df.sample(5, random_state=42)
-        for idx, item in popular.iterrows():
-            with st.expander(f"{item['title']} ({item['type']}, {item['release_year']})", expanded=False):
-                st.write(f"**Rating:** {item['rating']}")
-                st.write(f"**Genre:** {item['listed_in']}")
-                if item['description']:
-                    st.write(f"**Deskripsi:** {item['description'][:200]}...")
+        if len(df) > 0:
+            popular = df.sample(min(5, len(df)), random_state=42)
+            for idx, item in popular.iterrows():
+                with st.expander(f"{item['title']} ({item['type']}, {item['release_year']})", expanded=False):
+                    if item['rating']:
+                        st.write(f"**Rating:** {item['rating']}")
+                    if item['listed_in']:
+                        st.write(f"**Genre:** {item['listed_in']}")
+                    if item['description']:
+                        st.write(f"**Deskripsi:** {item['description'][:200]}...")
 
 # -----------------------------
 # Page: Data Analysis
@@ -987,20 +1106,20 @@ elif page == "📊 Analisis Data":
         )
     
     with col_m2:
-        movie_count = int((df['type']=='Movie').sum())
+        movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
         display_metric_card(
             "Movies",
             f"{movie_count:,}",
-            f"{movie_count/len(df)*100:.1f}%",
+            f"{movie_count/len(df)*100:.1f}%" if len(df) > 0 else "0%",
             "🎥"
         )
     
     with col_m3:
-        tv_count = int((df['type']=='TV Show').sum())
+        tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
         display_metric_card(
             "TV Shows",
             f"{tv_count:,}",
-            f"{tv_count/len(df)*100:.1f}%",
+            f"{tv_count/len(df)*100:.1f}%" if len(df) > 0 else "0%",
             "📺"
         )
     
@@ -1019,93 +1138,122 @@ elif page == "📊 Analisis Data":
     st.markdown("### 📋 Pratinjau Data")
     sample_size = st.slider("**Pilih jumlah sampel data:**", 5, 50, 15)
     
-    preview_df = df[["title", "type", "release_year", "rating", "duration", "listed_in"]].head(sample_size)
-    st.dataframe(
-        preview_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "title": "Judul",
-            "type": "Tipe",
-            "release_year": "Tahun Rilis",
-            "rating": "Rating",
-            "duration": "Durasi",
-            "listed_in": "Genre"
-        }
-    )
+    if len(df) > 0:
+        preview_df = df[["title", "type", "release_year", "rating", "duration", "listed_in"]].head(sample_size)
+        st.dataframe(
+            preview_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "title": "Judul",
+                "type": "Tipe",
+                "release_year": "Tahun Rilis",
+                "rating": "Rating",
+                "duration": "Durasi",
+                "listed_in": "Genre"
+            }
+        )
+    else:
+        st.warning("Tidak ada data untuk ditampilkan")
     
     st.divider()
     
     # Charts Section
-    st.markdown("## 📊 Visualisasi Data")
-    
-    col_c1, col_c2 = st.columns(2)
-    
-    with col_c1:
-        st.markdown("### 🎭 Distribusi Tipe Konten")
-        type_counts = df["type"].value_counts()
-        st.bar_chart(type_counts)
+    if len(df) > 0:
+        st.markdown("## 📊 Visualisasi Data")
         
-        st.markdown("### 🌍 Top 10 Negara")
-        top_countries = split_and_count(df["country"], sep=",", top_k=10)
-        st.bar_chart(top_countries)
-    
-    with col_c2:
-        st.markdown("### 🎬 Top 10 Genre")
-        top_genres = split_and_count(df["listed_in"], sep=",", top_k=10)
-        st.bar_chart(top_genres)
+        col_c1, col_c2 = st.columns(2)
         
-        st.markdown("### 📅 Tren Tahun Rilis")
-        year_counts = df["release_year"].replace(0, np.nan).dropna().astype(int).value_counts().sort_index()
-        st.line_chart(year_counts)
+        with col_c1:
+            st.markdown("### 🎭 Distribusi Tipe Konten")
+            # Count movies and TV shows
+            movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
+            tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
+            other_count = len(df) - movie_count - tv_count
+            
+            type_data = pd.DataFrame({
+                'Type': ['Movie', 'TV Show', 'Other'],
+                'Count': [movie_count, tv_count, other_count]
+            })
+            st.bar_chart(type_data.set_index('Type'))
+            
+            st.markdown("### 🌍 Top 10 Negara")
+            top_countries = split_and_count(df["country"], sep=",", top_k=10)
+            if len(top_countries) > 0:
+                st.bar_chart(top_countries)
+            else:
+                st.info("Tidak ada data negara")
+        
+        with col_c2:
+            st.markdown("### 🎬 Top 10 Genre")
+            top_genres = split_and_count(df["listed_in"], sep=",", top_k=10)
+            if len(top_genres) > 0:
+                st.bar_chart(top_genres)
+            else:
+                st.info("Tidak ada data genre")
+            
+            st.markdown("### 📅 Tren Tahun Rilis")
+            year_counts = df["release_year"].replace(0, np.nan).dropna().astype(int).value_counts().sort_index()
+            if len(year_counts) > 0:
+                st.line_chart(year_counts)
+            else:
+                st.info("Tidak ada data tahun rilis")
     
     st.divider()
     
     # Rating Distribution
-    st.markdown("### ⭐ Distribusi Rating")
-    rating_counts = df["rating"].value_counts().head(15)
-    
-    col_r1, col_r2 = st.columns([2, 1])
-    with col_r1:
-        st.bar_chart(rating_counts)
-    
-    with col_r2:
-        st.markdown("#### 🏆 Rating Terpopuler")
-        for rating, count in rating_counts.head(5).items():
-            st.metric(rating, f"{count:,}")
+    if len(df) > 0:
+        st.markdown("### ⭐ Distribusi Rating")
+        rating_counts = df["rating"].value_counts().head(15)
+        
+        if len(rating_counts) > 0:
+            col_r1, col_r2 = st.columns([2, 1])
+            with col_r1:
+                st.bar_chart(rating_counts)
+            
+            with col_r2:
+                st.markdown("#### 🏆 Rating Terpopuler")
+                for rating, count in rating_counts.head(5).items():
+                    st.metric(rating, f"{count:,}")
+        else:
+            st.info("Tidak ada data rating")
     
     st.divider()
     
     # Data Quality Check
-    st.markdown("### 🔍 Pemeriksaan Kualitas Data")
-    
-    col_q1, col_q2, col_q3 = st.columns(3)
-    
-    with col_q1:
-        missing_director = (df['director'] == '').sum()
-        st.metric("Director Kosong", f"{missing_director:,}", f"{missing_director/len(df)*100:.1f}%")
-    
-    with col_q2:
-        missing_cast = (df['cast'] == '').sum()
-        st.metric("Cast Kosong", f"{missing_cast:,}", f"{missing_cast/len(df)*100:.1f}%")
-    
-    with col_q3:
-        missing_country = (df['country'] == '').sum()
-        st.metric("Negara Kosong", f"{missing_country:,}", f"{missing_country/len(df)*100:.1f}%")
-    
-    # Export option
-    st.divider()
-    st.markdown("### 💾 Ekspor Data")
-    
-    if st.button("📥 Download Dataset yang Telah Diproses", use_container_width=True):
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="⬇️ Klik untuk Download CSV",
-            data=csv,
-            file_name="netflix_processed_dataset.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    if len(df) > 0:
+        st.markdown("### 🔍 Pemeriksaan Kualitas Data")
+        
+        col_q1, col_q2, col_q3 = st.columns(3)
+        
+        with col_q1:
+            missing_director = (df['director'] == '').sum()
+            st.metric("Director Kosong", f"{missing_director:,}", 
+                     f"{missing_director/len(df)*100:.1f}%" if len(df) > 0 else "0%")
+        
+        with col_q2:
+            missing_cast = (df['cast'] == '').sum()
+            st.metric("Cast Kosong", f"{missing_cast:,}", 
+                     f"{missing_cast/len(df)*100:.1f}%" if len(df) > 0 else "0%")
+        
+        with col_q3:
+            missing_country = (df['country'] == '').sum()
+            st.metric("Negara Kosong", f"{missing_country:,}", 
+                     f"{missing_country/len(df)*100:.1f}%" if len(df) > 0 else "0%")
+        
+        # Export option
+        st.divider()
+        st.markdown("### 💾 Ekspor Data")
+        
+        if st.button("📥 Download Dataset yang Telah Diproses", use_container_width=True):
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Klik untuk Download CSV",
+                data=csv,
+                file_name="netflix_processed_dataset.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
 
 # -----------------------------
 # Page: About System
