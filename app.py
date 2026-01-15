@@ -495,48 +495,45 @@ def split_and_count(series: pd.Series, sep: str = ",", top_k: int = 10) -> pd.Se
 def create_recommendation_card(r: pd.Series, rank: int):
     """Create a beautiful recommendation card"""
     similarity = float(r.get("similarity", 0.0))
+    title = _safe_str(r.get('title', ''))
+    card_type = _safe_str(r.get('type', ''))
+    year = r.get('release_year', '')
+    rating = _safe_str(r.get('rating', ''))
+    genre = _safe_str(r.get('listed_in', ''))
+    description = _safe_str(r.get('description', 'No description available'))
+    director = _safe_str(r.get('director', 'Not specified'))
+    country = _safe_str(r.get('country', 'Not specified'))
     
-    card_html = f"""
-    <div class="recommendation-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {_safe_str(r.get('title', ''))}</h4>
-            <div class="similarity-score">
-                {similarity:.1%}
-            </div>
-        </div>
-        
-        <div style="margin: 1rem 0;">
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
-                <span class="badge badge-movie">{_safe_str(r.get('type', ''))}</span>
-                <span class="badge badge-year">{r.get('release_year', '')}</span>
-                <span class="badge badge-rating">{_safe_str(r.get('rating', ''))}</span>
-            </div>
-            
-            <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
-                <strong style="color: #667eea;">🎭 Genre:</strong> 
-                <span style="color: #555; font-weight: 500;">{_safe_str(r.get('listed_in', ''))}</span>
-            </div>
-            
-            <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
-                <strong style="color: #667eea;">📖 Deskripsi:</strong>
-                <div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">
-                    {_safe_str(r.get('description', 'No description available'))}
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 200px;">
-                    <strong style="color: #667eea;">🎬 Director:</strong>
-                    <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('director', 'Not specified'))}</div>
-                </div>
-                <div style="flex: 1; min-width: 200px;">
-                    <strong style="color: #667eea;">🌍 Negara:</strong>
-                    <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('country', 'Not specified'))}</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    """
+    card_html = f"""<div class="recommendation-card">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+<h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {title}</h4>
+<div class="similarity-score">{similarity:.1%}</div>
+</div>
+<div style="margin: 1rem 0;">
+<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+<span class="badge badge-movie">{card_type}</span>
+<span class="badge badge-year">{year}</span>
+<span class="badge badge-rating">{rating}</span>
+</div>
+<div style="background: #f8f9fa; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
+<strong style="color: #667eea;">🎭 Genre:</strong> <span style="color: #555; font-weight: 500;">{genre}</span>
+</div>
+<div style="background: #f8f9fa; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+<strong style="color: #667eea;">📖 Deskripsi:</strong>
+<div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">{description}</div>
+</div>
+<div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
+<div style="flex: 1; min-width: 200px;">
+<strong style="color: #667eea;">🎬 Director:</strong>
+<div style="color: #666; font-size: 0.95rem;">{director}</div>
+</div>
+<div style="flex: 1; min-width: 200px;">
+<strong style="color: #667eea;">🌍 Negara:</strong>
+<div style="color: #666; font-size: 0.95rem;">{country}</div>
+</div>
+</div>
+</div>
+</div>"""
     return card_html
 
 def display_metric_card(title: str, value: str, subtitle: str = "", icon: str = "📊"):
