@@ -492,49 +492,67 @@ def split_and_count(series: pd.Series, sep: str = ",", top_k: int = 10) -> pd.Se
     exploded = exploded[exploded != ""]
     return exploded.value_counts().head(top_k)
 
-def create_recommendation_card(r: pd.Series, rank: int):
-    """Create a beautiful recommendation card"""
+def display_recommendation_card(r: pd.Series, rank: int):
+    """Display a beautiful recommendation card using Streamlit components"""
     similarity = float(r.get("similarity", 0.0))
-    title = _safe_str(r.get('title', ''))
-    card_type = _safe_str(r.get('type', ''))
-    year = r.get('release_year', '')
-    rating = _safe_str(r.get('rating', ''))
-    genre = _safe_str(r.get('listed_in', ''))
-    description = _safe_str(r.get('description', 'No description available'))
-    director = _safe_str(r.get('director', 'Not specified'))
-    country = _safe_str(r.get('country', 'Not specified'))
     
-    card_html = f"""<div class="recommendation-card">
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-<h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {title}</h4>
-<div class="similarity-score">{similarity:.1%}</div>
-</div>
-<div style="margin: 1rem 0;">
-<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
-<span class="badge badge-movie">{card_type}</span>
-<span class="badge badge-year">{year}</span>
-<span class="badge badge-rating">{rating}</span>
-</div>
-<div style="background: #f8f9fa; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
-<strong style="color: #667eea;">🎭 Genre:</strong> <span style="color: #555; font-weight: 500;">{genre}</span>
-</div>
-<div style="background: #f8f9fa; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
-<strong style="color: #667eea;">📖 Deskripsi:</strong>
-<div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">{description}</div>
-</div>
-<div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
-<div style="flex: 1; min-width: 200px;">
-<strong style="color: #667eea;">🎬 Director:</strong>
-<div style="color: #666; font-size: 0.95rem;">{director}</div>
-</div>
-<div style="flex: 1; min-width: 200px;">
-<strong style="color: #667eea;">🌍 Negara:</strong>
-<div style="color: #666; font-size: 0.95rem;">{country}</div>
-</div>
-</div>
-</div>
-</div>"""
-    return card_html
+    # Use markdown for the card container
+    st.markdown(f"""
+    <div class="recommendation-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h4 style="margin: 0; color: #667eea; font-size: 1.3rem;">{rank}. {_safe_str(r.get('title', ''))}</h4>
+            <div class="similarity-score">
+                {similarity:.1%}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Use Streamlit components for the content (this ensures proper rendering)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f'<span class="badge badge-movie">{_safe_str(r.get("type", ""))}</span>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<span class="badge badge-year">{r.get("release_year", "")}</span>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<span class="badge badge-rating">{_safe_str(r.get("rating", ""))}</span>', unsafe_allow_html=True)
+    
+    # Genre
+    st.markdown(f"""
+    <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0; border-left: 4px solid #667eea;">
+        <strong style="color: #667eea;">🎭 Genre:</strong> 
+        <span style="color: #555; font-weight: 500;">{_safe_str(r.get('listed_in', ''))}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Description
+    description = _safe_str(r.get('description', 'No description available'))
+    st.markdown(f"""
+    <div style="background: #f8f9ff; border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+        <strong style="color: #667eea;">📖 Deskripsi:</strong>
+        <div style="font-size: 0.95rem; color: #666; line-height: 1.5; margin-top: 0.5rem;">
+            {description}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Additional details
+    col_details1, col_details2 = st.columns(2)
+    with col_details1:
+        st.markdown(f"""
+        <div style="margin-bottom: 0.5rem;">
+            <strong style="color: #667eea;">🎬 Director:</strong>
+            <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('director', 'Not specified'))}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_details2:
+        st.markdown(f"""
+        <div style="margin-bottom: 0.5rem;">
+            <strong style="color: #667eea;">🌍 Negara:</strong>
+            <div style="color: #666; font-size: 0.95rem;">{_safe_str(r.get('country', 'Not specified'))}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 def display_metric_card(title: str, value: str, subtitle: str = "", icon: str = "📊"):
     """Display a metric card"""
@@ -604,10 +622,6 @@ with st.sidebar:
     st.divider()
     
     st.markdown("### 📈 Status Sistem")
-    if 'raw_df' in locals():
-        st.success("✅ **Sistem Aktif** - Dataset berhasil dimuat", icon="✅")
-    else:
-        st.warning("⏳ **Menunggu Data** - Silakan upload atau gunakan dataset lokal", icon="⚠️")
     
     st.divider()
     
@@ -657,6 +671,10 @@ else:
 with st.spinner("🔧 Memproses dan menyiapkan data untuk analisis..."):
     df = prepare_data(raw_df)
     vectorizer, tfidf_matrix = build_vectorizer_and_matrix(df["soup"])
+
+# Update sidebar status
+with st.sidebar:
+    st.success("✅ **Sistem Aktif** - Dataset berhasil dimuat", icon="✅")
 
 # Common variables
 min_year = int(df["release_year"].replace(0, np.nan).min(skipna=True) or 1900)
@@ -788,8 +806,7 @@ if page == "🎯 Rekomendasi":
                 else:
                     # Display recommendations as cards
                     for i, (_, r) in enumerate(recs.iterrows(), 1):
-                        card_html = create_recommendation_card(r, i)
-                        st.markdown(card_html, unsafe_allow_html=True)
+                        display_recommendation_card(r, i)
                         
                         # Additional details in expander
                         with st.expander("🔍 Lihat detail teknis", expanded=False):
@@ -925,8 +942,7 @@ if page == "🎯 Rekomendasi":
                 
                 # Display results
                 for i, (_, r) in enumerate(recs_q.iterrows(), 1):
-                    card_html = create_recommendation_card(r, i)
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    display_recommendation_card(r, i)
     
     # Tab 3: Favorites (Placeholder)
     with tabs[2]:
