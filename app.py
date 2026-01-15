@@ -372,9 +372,6 @@ def load_data_from_upload(file_bytes: bytes) -> pd.DataFrame:
 def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.copy()
     
-    # First, let's check what columns we have
-    st.info(f"Kolom dataset: {list(df.columns)}")
-    
     # Clean column names (strip whitespace, lowercase)
     df.columns = df.columns.str.strip().str.lower()
     
@@ -385,19 +382,27 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
         'type': 'type',
         'title': 'title',
         'director': 'director',
+        'director_list': 'director',
         'cast': 'cast',
+        'cast_list': 'cast',
         'country': 'country',
+        'country_list': 'country',
         'date_added': 'date_added',
+        'date_added_iso': 'date_added',
         'release year': 'release_year',
+        'release_year': 'release_year',
         'rating': 'rating',
         'duration': 'duration',
         'listed in': 'listed_in',
-        'description': 'description'
+        'listed_in': 'listed_in',
+        'listed_in_list': 'listed_in',
+        'description': 'description',
+        'actor': 'cast'  # Map actor to cast
     }
     
     # Rename columns based on mapping
     for old_name, new_name in column_mapping.items():
-        if old_name in df.columns:
+        if old_name in df.columns and new_name not in df.columns:
             df[new_name] = df[old_name]
     
     # Ensure all expected columns exist
@@ -409,32 +414,23 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     for col in expected:
         if col not in df.columns:
             df[col] = ""
-            st.warning(f"Kolom '{col}' tidak ditemukan, dibuat kosong")
     
-    # Debug: Show unique types
-    st.info(f"Tipe unik dalam dataset: {df['type'].unique()}")
-    
-    # Clean type column - handle different formats
+    # Clean and standardize type column
     df['type'] = df['type'].astype(str).str.strip()
     
-    # Standardize type values
-    type_mapping = {
-        'Movie': 'Movie',
-        'movie': 'Movie',
-        'TV Show': 'TV Show',
-        'TV show': 'TV Show',
-        'Tv Show': 'TV Show',
-        'tv show': 'TV Show',
-        'Series': 'TV Show',
-        'series': 'TV Show'
-    }
-    
-    df['type'] = df['type'].map(type_mapping).fillna(df['type'])
+    # Standardize type values - handle 'Tv Show' to 'TV Show'
+    df['type'] = df['type'].apply(lambda x: 'TV Show' if str(x).lower() == 'tv show' else x)
+    df['type'] = df['type'].apply(lambda x: 'Movie' if str(x).lower() == 'movie' else x)
     
     text_cols = ["type", "title", "director", "cast", "country", "rating", "duration", "listed_in", "description"]
     for c in text_cols:
         df[c] = df[c].fillna("").astype(str)
-        df[c] = df[c].replace({"unknown": "", "Unknown": "", "nan": "", "NaN": "", "None": "", "none": ""})
+        df[c] = df[c].replace({
+            "unknown": "", "Unknown": "", 
+            "nan": "", "NaN": "", 
+            "None": "", "none": "",
+            "": ""
+        })
     
     if "release_year" in df.columns:
         df["release_year"] = pd.to_numeric(df["release_year"], errors="coerce").fillna(0).astype(int)
@@ -462,11 +458,6 @@ def prepare_data(raw: pd.DataFrame) -> pd.DataFrame:
     
     if df["show_id"].astype(str).duplicated().any():
         df["show_id"] = df.apply(lambda r: f"{r.get('show_id','')}_{r.name}", axis=1)
-    
-    # Debug: Count types
-    movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
-    tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
-    st.info(f"Total Movies: {movie_count}, Total TV Shows: {tv_count}")
     
     return df
 
@@ -687,19 +678,6 @@ with st.sidebar:
         )
     
     st.divider()
-    
-    st.markdown("### 📈 Status Sistem")
-    
-    st.divider()
-    
-    st.markdown("""
-    <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); border-radius: 10px;">
-        <p style="color: #888; font-size: 0.85rem; margin: 0;">
-            Dibangun dengan ❤️ menggunakan<br>
-            <strong>Streamlit</strong> & <strong>Scikit-learn</strong>
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
 
 # -----------------------------
 # Load Data
@@ -742,37 +720,41 @@ with st.spinner("🔧 Memproses dan menyiapkan data untuk analisis..."):
 # Update sidebar status
 with st.sidebar:
     st.success("✅ **Sistem Aktif** - Dataset berhasil dimuat", icon="✅")
-
-# Debug: Check type distribution
-st.sidebar.markdown("### 📊 Distribusi Data")
-st.sidebar.write(f"Total Data: **{len(df):,}**")
-
-# Get actual counts with case-insensitive matching
-movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
-tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
-
-st.sidebar.write(f"Movies: **{movie_count:,}**")
-st.sidebar.write(f"TV Shows: **{tv_count:,}**")
+    
+    # Display dataset stats in sidebar
+    st.markdown("### 📊 Statistik Dataset")
+    
+    # Count movies and TV shows properly
+    movie_count = len(df[df['type'] == 'Movie'])
+    tv_count = len(df[df['type'] == 'TV Show'])
+    other_count = len(df) - movie_count - tv_count
+    
+    st.write(f"**Total Data:** {len(df):,}")
+    st.write(f"**Movies:** {movie_count:,}")
+    st.write(f"**TV Shows:** {tv_count:,}")
+    if other_count > 0:
+        st.write(f"**Lainnya:** {other_count:,}")
+    
+    st.divider()
+    
+    st.markdown("""
+    <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); border-radius: 10px;">
+        <p style="color: #888; font-size: 0.85rem; margin: 0;">
+            Dibangun dengan ❤️ menggunakan<br>
+            <strong>Streamlit</strong> & <strong>Scikit-learn</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Common variables
 min_year = int(df["release_year"].replace(0, np.nan).min(skipna=True) or 1900)
 max_year = int(df["release_year"].max() or 2025)
 
-# Get unique types properly
-unique_types = df['type'].astype(str).unique()
-# Filter out empty strings and normalize
-unique_types = [t for t in unique_types if t and t != 'nan']
-# Standardize types
-standard_types = []
-for t in unique_types:
-    if 'movie' in str(t).lower():
-        standard_types.append('Movie')
-    elif 'tv' in str(t).lower():
-        standard_types.append('TV Show')
-    else:
-        standard_types.append(t)
-
-type_options = ["Semua Tipe"] + sorted(list(set(standard_types)))
+# Get unique types
+unique_types = sorted(df['type'].unique().tolist())
+# Filter out empty strings
+unique_types = [t for t in unique_types if t and str(t) != 'nan']
+type_options = ["Semua Tipe"] + unique_types
 
 # -----------------------------
 # Page: Recommendation
@@ -797,10 +779,6 @@ if page == "🎯 Rekomendasi":
             
             if filter_type_for_selector == "Semua Tipe":
                 selector_df = df
-            elif filter_type_for_selector == "Movie":
-                selector_df = df[df['type'].str.contains('Movie', case=False, na=False)]
-            elif filter_type_for_selector == "TV Show":
-                selector_df = df[df['type'].str.contains('TV', case=False, na=False)]
             else:
                 selector_df = df[df["type"] == filter_type_for_selector]
             
@@ -1106,7 +1084,7 @@ elif page == "📊 Analisis Data":
         )
     
     with col_m2:
-        movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
+        movie_count = len(df[df['type'] == 'Movie'])
         display_metric_card(
             "Movies",
             f"{movie_count:,}",
@@ -1115,7 +1093,7 @@ elif page == "📊 Analisis Data":
         )
     
     with col_m3:
-        tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
+        tv_count = len(df[df['type'] == 'TV Show'])
         display_metric_card(
             "TV Shows",
             f"{tv_count:,}",
@@ -1167,8 +1145,8 @@ elif page == "📊 Analisis Data":
         with col_c1:
             st.markdown("### 🎭 Distribusi Tipe Konten")
             # Count movies and TV shows
-            movie_count = len(df[df['type'].str.contains('Movie', case=False, na=False)])
-            tv_count = len(df[df['type'].str.contains('TV', case=False, na=False)])
+            movie_count = len(df[df['type'] == 'Movie'])
+            tv_count = len(df[df['type'] == 'TV Show'])
             other_count = len(df) - movie_count - tv_count
             
             type_data = pd.DataFrame({
